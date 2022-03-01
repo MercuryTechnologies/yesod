@@ -73,7 +73,7 @@ mkDispatchClause MkDispatchSettings {..} resources = do
     handlePiece (Static str) = return (LitP $ StringL str, Nothing)
     handlePiece (Dynamic _) = do
         x <- newName "dyn"
-        let pat = ViewP (VarE 'fromPathPiece) (ConP 'Just [VarP x])
+        let pat = ViewP (VarE 'fromPathPiece) (ConP 'Just [] [VarP x])
         return (pat, Just $ VarE x)
 
     handlePieces :: [Piece a] -> Q ([Pat], [Exp])
@@ -86,7 +86,7 @@ mkDispatchClause MkDispatchSettings {..} resources = do
     mkPathPat final =
         foldr addPat final
       where
-        addPat x y = ConP '(:) [x, y]
+        addPat x y = ConP '(:) [] [x, y]
 
     go :: SDC -> ResourceTree a -> Q Clause
     go sdc (ResourceParent name _check pieces children) = do
@@ -124,11 +124,11 @@ mkDispatchClause MkDispatchSettings {..} resources = do
                 Methods multi methods -> do
                     (finalPat, mfinalE) <-
                         case multi of
-                            Nothing -> return (ConP '[] [], Nothing)
+                            Nothing -> return (ConP '[] [] [], Nothing)
                             Just _ -> do
                                 multiName <- newName "multi"
                                 let pat = ViewP (VarE 'fromPathMultiPiece)
-                                                (ConP 'Just [VarP multiName])
+                                                (ConP 'Just [] [VarP multiName])
                                 return (pat, Just $ VarE multiName)
 
                     let dynsMulti =

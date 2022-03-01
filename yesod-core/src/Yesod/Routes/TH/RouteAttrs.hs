@@ -26,7 +26,7 @@ goTree front (ResourceParent name _check pieces trees) =
     toIgnore = length $ filter isDynamic pieces
     isDynamic Dynamic{} = True
     isDynamic Static{} = False
-    front' = front . ConP (mkName name) . ignored
+    front' = front . ConP (mkName name) [] . ignored
 
 goRes :: (Pat -> Pat) -> Resource a -> Q Clause
 goRes front Resource {..} =
