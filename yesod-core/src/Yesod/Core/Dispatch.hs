@@ -58,6 +58,7 @@ import qualified Network.Wai as W
 import Data.ByteString.Lazy.Char8 ()
 
 import Data.Bits ((.|.), finiteBitSize, shiftL)
+import Data.Default (def)
 import Data.Text (Text)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as BL
@@ -78,7 +79,7 @@ import Yesod.Core.Internal.Util (getCurrentMaxExpiresRFC1123)
 import Network.Wai.Middleware.Autohead
 import Network.Wai.Middleware.AcceptOverride
 import Network.Wai.Middleware.RequestLogger
-import Network.Wai.Middleware.Gzip
+import qualified Network.Wai.Middleware.Gzip as Gzip
 import Network.Wai.Middleware.MethodOverride
 
 import qualified Network.Wai.Handler.Warp
@@ -254,7 +255,7 @@ mkDefaultMiddlewares logger = do
 --
 -- Since 1.2.12
 defaultMiddlewaresNoLogging :: W.Middleware
-defaultMiddlewaresNoLogging = acceptOverride . autohead . gzip def . methodOverride
+defaultMiddlewaresNoLogging = acceptOverride . autohead . Gzip.gzip Gzip.def . methodOverride
 
 -- | Deprecated synonym for 'warp'.
 warpDebug :: YesodDispatch site => Int -> site -> IO ()
