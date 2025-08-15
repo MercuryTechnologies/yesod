@@ -17,6 +17,8 @@ module Yesod.Routes.TH.RenderRoute
     , setShowDerived
     , setReadDerived
     , setCreateResources
+    , setFocusOnNestedRoute
+    , roFocusOnNestedRoute
     ) where
 
 import Yesod.Routes.TH.Types
@@ -43,6 +45,11 @@ data RouteOpts = MkRouteOpts
     , roDerivedShow :: Bool
     , roDerivedRead :: Bool
     , roCreateResources :: Bool
+    , roFocusOnNestedRoute :: Maybe String
+    -- ^ If this option is set, then we will only generate datatypes for
+    -- the nested subroute that matches this string.
+    --
+    -- @since 1.6.28.0
     }
 
 -- | Default options for generating routes.
@@ -52,7 +59,67 @@ data RouteOpts = MkRouteOpts
 --
 -- @since 1.6.25.0
 defaultOpts :: RouteOpts
-defaultOpts = MkRouteOpts True True True True
+defaultOpts = MkRouteOpts True True True True Nothing
+
+-- | If you set this with @Just routeName@, then the code generation will
+-- generate code for the @routeName@ to be imported in the main dispatch
+-- class. This allows you to generate code in separate modules.
+--
+-- Example:
+--
+-- First, you would put your route definitions into their own file.
+--
+-- @
+-- module App.Routes.Resources where
+--
+-- import Yesod.Core
+--
+-- appResources :: [ResourceTree String]
+-- appResources = [parseRoutes|
+--     /  HomeR GET
+--
+--     /nest NestR:
+--         /     NestIndexR GET POST
+--         /#Int NestShowR  GET POST
+--
+-- |]
+-- @
+--
+-- We have defined a nested route called @NestR@ here. A nested route is
+-- created with the @:@ after the route name.
+--
+-- Then, in a module for the route specifically, we can generate the route
+-- datatype and instances for later hooking in to the main instance.
+--
+-- @
+-- module App.Routes.NestR where
+--
+-- import App.Routes.Resources
+-- import Yesod.Core
+--
+-- mkYesodOpts (setFocusOnNestedRoute (Just "NestR") defaultOptions) "App" appResources
+-- @
+--
+-- If you only want to generate the datatypes, you can separate things
+-- further using 'mkYesodDataOpts' and 'mkYesodDispatchOpts'.
+--
+-- Finally, import that type into your main yesod macro code.
+--
+-- @
+-- module App where
+--
+-- import App.Routes.Resources (appResources)
+-- import App.Routes.NestR (NestR(..))
+--
+-- mkYesod "App" appResources
+-- @
+--
+-- The call to 'mkYesod' will delegate to the generated code for @NestR@
+-- rather than regenerating it.
+--
+-- @since 1.6.28.0
+setFocusOnNestedRoute :: Maybe String -> RouteOpts -> RouteOpts
+setFocusOnNestedRoute mstr rdo = rdo { roFocusOnNestedRoute = mstr }
 
 -- |
 --
@@ -94,7 +161,7 @@ shouldCreateResources = roCreateResources
 --
 -- @since 1.6.25.0
 instanceNamesFromOpts :: RouteOpts -> [Name]
-instanceNamesFromOpts (MkRouteOpts eq shw rd _) = prependIf eq ''Eq $ prependIf shw ''Show $ prependIf rd ''Read []
+instanceNamesFromOpts (MkRouteOpts eq shw rd _ _) = prependIf eq ''Eq $ prependIf shw ''Show $ prependIf rd ''Read []
     where prependIf b = if b then (:) else const id
 
 -- |
@@ -109,11 +176,23 @@ mkRouteCons = mkRouteConsOpts defaultOpts
 --
 -- @since 1.6.25.0
 mkRouteConsOpts :: RouteOpts -> [ResourceTree Type] -> Q ([Con], [Dec])
-mkRouteConsOpts opts rttypes =
+mkRouteConsOpts opts rttypes = do
     mconcat <$> mapM mkRouteCon rttypes
+    -- So there's two sorts of things we can be generating here:
+    -- 1. The `Route site` datatype
+    -- 2. A child datatype for a nested route
+    --
+    -- Suppose someone has called `mkRouteConsOpts` with a "focus" set. We
+    -- must recur
   where
     mkRouteCon (ResourceLeaf res) =
-        return ([con], [])
+        case roFocusOnNestedRoute opts of
+            Nothing -> do
+                pure ([con], [])
+            Just _ -> do
+                -- If we are focusing on a specific nested subroute, then
+                -- a Leaf cannot possibly be what we want.
+                pure ([], [])
       where
         con = NormalC (mkName $ resourceName res)
             $ map (notStrict,)
@@ -130,14 +209,42 @@ mkRouteConsOpts opts rttypes =
                 _ -> []
 
     mkRouteCon (ResourceParent name _check pieces children) = do
-        (cons, decs) <- mkRouteConsOpts opts children
+        let newOpts =
+                case roFocusOnNestedRoute opts of
+                    Nothing ->
+                        opts
+                    Just target ->
+                        if target == name
+                            then setFocusOnNestedRoute Nothing opts
+                            else opts
+        (cons, decs) <- mkRouteConsOpts newOpts children
         let conts = mapM conT $ instanceNamesFromOpts opts
-#if MIN_VERSION_template_haskell(2,12,0)
-        dec <- DataD [] (mkName name) [] Nothing cons <$> fmap (pure . DerivClause Nothing) conts
-#else
-        dec <- DataD [] (mkName name) [] Nothing cons <$> conts
-#endif
-        return ([con], dec : decs)
+        let childDataName = mkName name
+
+        -- Generate the child datatype if it has not been generated
+        -- already, but only if we are *not* focusing on some other
+        -- datatype.
+        mname' <- lookupTypeName name
+        mdec <- case mname' of
+            Just _ -> do
+                -- datatype already exists, definitely don't generate it
+                pure Nothing
+            Nothing -> do
+                case roFocusOnNestedRoute opts of
+                    Just target | target /= name -> do
+                        -- If we have a target, and this ain't it, don't
+                        -- generate
+                        pure Nothing
+                    _ -> do
+                        childData <- mkChildDataGen childDataName cons conts
+                        childClauses <- mkRenderRouteClauses children
+                        childInstances <- do
+                            pure $ InstanceD Nothing [] (ConT ''RenderRouteNested `AppT` ConT childDataName)
+                                [ FunD 'renderRouteNested childClauses
+                                ]
+                        pure $ Just (childData : [childInstances])
+
+        return ([con], maybe id (<>) mdec decs)
       where
         con = NormalC (mkName name)
             $ map (notStrict,)
@@ -146,6 +253,13 @@ mkRouteConsOpts opts rttypes =
         singles = concatMap toSingle pieces
         toSingle Static{} = []
         toSingle (Dynamic typ) = [typ]
+
+        mkChildDataGen childDataName cons conts =
+#if MIN_VERSION_template_haskell(2,12,0)
+            DataD [] childDataName [] Nothing cons <$> fmap (pure . DerivClause Nothing) conts
+#else
+            DataD [] childDataName [] Nothing cons <$> conts
+#endif
 
 -- | Clauses for the 'renderRoute' method.
 mkRenderRouteClauses :: [ResourceTree Type] -> Q [Clause]
@@ -165,9 +279,22 @@ mkRenderRouteClauses =
         tsp <- [|toPathPiece|]
         let piecesSingle = mkPieces (AppE pack' . LitE . StringL) tsp pieces dyns
 
+        typeExists <- lookupTypeName name
+        hasNestInstance <- case typeExists of
+            Just _ ->
+                isInstance ''RenderRouteNested [ConT (mkName name)]
+            Nothing ->
+                pure False
+
+
         childRender <- newName "childRender"
         let rr = VarE childRender
-        childClauses <- mkRenderRouteClauses children
+        childClauses <-
+            if hasNestInstance
+            then
+                pure [Clause [] (NormalB (VarE 'renderRouteNested)) []]
+            else
+                mkRenderRouteClauses children
 
         a <- newName "a"
         b <- newName "b"
@@ -267,11 +394,19 @@ mkRenderRouteInstanceOpts opts cxt typ ress = do
     did <- DataInstD [] ''Route [typ] Nothing cons <$> mapM conT (clazzes False)
     let sds = fmap (\t -> StandaloneDerivD cxt $ ConT t `AppT` ( ConT ''Route `AppT` typ)) (clazzes True)
 #endif
-    return $ instanceD cxt (ConT ''RenderRoute `AppT` typ)
-        [ did
-        , FunD (mkName "renderRoute") cls
-        ]
-        : sds ++ decs
+    case roFocusOnNestedRoute opts of
+        Nothing -> do
+            return $ instanceD cxt (ConT ''RenderRoute `AppT` typ)
+                [ did
+                , FunD (mkName "renderRoute") cls
+                ]
+                : sds ++ decs
+        Just _ -> do
+            -- If we're generating routes for a subtarget, then we won't
+            -- generate the top-level `RenderRoute`. Instead, we'll want to
+            -- only generate the `decs` that are returned, plus the child
+            -- class declaration, eventually.
+            pure decs
   where
     clazzes standalone = if standalone `xor` null cxt then
           clazzes'
