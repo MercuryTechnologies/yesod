@@ -77,17 +77,14 @@ instance YesodDispatch site => YesodDispatchNested (Route site) where
 class RedirectUrl site url => UrlToDispatch url site where
     urlToDispatch :: url -> YesodRunnerEnv site -> W.Application
 
-instance YesodDispatch site => UrlToDispatch (Route site) site where
-    urlToDispatch _ = yesodDispatch
-
-instance (YesodDispatch site, RedirectUrl site (Route site, a)) => UrlToDispatch (Route site, a) site where
-    urlToDispatch _ = yesodDispatch
-
-instance YesodDispatch site => UrlToDispatch Text site where
-    urlToDispatch _ = yesodDispatch
-
-instance YesodDispatch site => UrlToDispatch String site where
-    urlToDispatch _ = yesodDispatch
+instance
+    ( UrlToDispatch url site
+    , RedirectUrl site (url, params)
+    )
+  =>
+    UrlToDispatch (url, params) site
+  where
+    urlToDispatch (url, _) = urlToDispatch url
 
 instance
     ( ParentSite route ~ site

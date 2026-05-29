@@ -21,8 +21,10 @@ module Yesod.Routes.TH.RenderRoute
     , setFocusOnNestedRoute
     , roFocusOnNestedRoute
     , roNestedRouteFallthrough
+    , roUrlToDispatchSiteHook
     , setParameterizedSubroute
     , setNestedRouteFallthrough
+    , setUrlToDispatchSiteHook
     , nullifyWhenNoParam
     ) where
 
@@ -70,6 +72,12 @@ data RouteOpts = MkRouteOpts
     -- Default: 'False'.
     --
     -- @since 1.6.28.0
+    , roUrlToDispatchSiteHook :: Maybe Name
+    -- ^ Optional hook used by generated dispatch clauses to update the site
+    -- value before running the matched handler.
+    --
+    -- The named function must have the shape @url -> site -> site@ for the
+    -- generated URL type and site.
     }
 
 -- | Default options for generating routes.
@@ -87,6 +95,7 @@ defaultOpts = MkRouteOpts
     , roParameterizedSubroute = False
     , roFocusOnNestedRoute = Nothing
     , roNestedRouteFallthrough = False
+    , roUrlToDispatchSiteHook = Nothing
     }
 
 -- | If you set this with @Just routeName@, then the code generation will
@@ -196,6 +205,13 @@ shouldCreateResources = roCreateResources
 -- @since 1.6.28.0
 setParameterizedSubroute :: Bool -> RouteOpts -> RouteOpts
 setParameterizedSubroute b rdo = rdo { roParameterizedSubroute = b }
+
+-- | Set a function used by generated dispatch clauses to update the site
+-- before running the matched handler. This is useful for applications that
+-- need dispatch through a focused route module to install route-specific
+-- behavior into the foundation value used by handlers.
+setUrlToDispatchSiteHook :: Name -> RouteOpts -> RouteOpts
+setUrlToDispatchSiteHook name rdo = rdo { roUrlToDispatchSiteHook = Just name }
 
 -- |
 --

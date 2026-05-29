@@ -35,7 +35,7 @@ import YesodCoreTest.NestedDispatch.Resources
 import YesodCoreTest.NestedDispatch.NestR (NestR(..))
 import YesodCoreTest.NestedDispatch.ParentR (ParentR(..))
 import YesodCoreTest.NestedDispatch.Parent0R (Parent0R(..), Child0R(..))
-import YesodCoreTest.NestedDispatch.Parent0R.Child0R
+import YesodCoreTest.NestedDispatch.Parent0R.Child0R ()
 import qualified Network.HTTP.Types as H
 
 -- | Attach an annotation to an expectation. If the expectation fails,
@@ -94,7 +94,7 @@ testRequestIO :: HasCallStack => Int -- ^ http status code
             -> Maybe ByteString -- ^ expected body
             -> IO ()
 testRequestIO status req mexpected = do
-    app <- toWaiApp App
+    app <- toWaiApp defaultApp
     sres <- flip runSession app $ do
         request req
     annotate_ ("Request body: " <> show (simpleBody sres )) $ do
@@ -274,7 +274,7 @@ specs = do
 
     describe "UrlToDispatch NestIndexR" $ do
         it "works" $ do
-            yre <- mkYesodRunnerEnv App
+            yre <- mkYesodRunnerEnv defaultApp
             let app = urlToDispatch NestIndexR yre
                 req = defaultRequest
                     { pathInfo = ["nest"]
@@ -284,6 +284,32 @@ specs = do
                 request req
             H.statusCode (simpleStatus sres) `shouldBe` 200
             simpleBody sres `shouldBe` "getNestIndexR"
+
+    describe "UrlToDispatch NestMarkerR" $ do
+        it "applies the route-specific site hook" $ do
+            yre <- mkYesodRunnerEnv defaultApp
+            let app = urlToDispatch NestMarkerR yre
+                req = defaultRequest
+                    { pathInfo = ["nest", "marker"]
+                    , requestMethod = "GET"
+                    }
+            sres <- flip runSession app $ do
+                request req
+            H.statusCode (simpleStatus sres) `shouldBe` 200
+            simpleBody sres `shouldBe` "NestMarkerR"
+
+    describe "UrlToDispatch (WithParentArgs Parent0R)" $ do
+        it "applies the route-specific site hook with parent args" $ do
+            yre <- mkYesodRunnerEnv defaultApp
+            let app = urlToDispatch (WithParentArgs 1 Parent0MarkerR) yre
+                req = defaultRequest
+                    { pathInfo = ["parent0", "1", "marker"]
+                    , requestMethod = "GET"
+                    }
+            sres <- flip runSession app $ do
+                request req
+            H.statusCode (simpleStatus sres) `shouldBe` 200
+            simpleBody sres `shouldBe` "Parent0MarkerR:1"
 
 
     describe "selectRep" $ do

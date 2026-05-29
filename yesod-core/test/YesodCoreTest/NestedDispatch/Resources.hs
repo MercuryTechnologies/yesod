@@ -7,10 +7,27 @@
 
 module YesodCoreTest.NestedDispatch.Resources where
 
+import Data.Text (Text)
 import Yesod.Core
 import Yesod.Routes.TH.Types
 
 data App = App
+    { appDispatchMarker :: Maybe Text
+    }
+
+defaultApp :: App
+defaultApp = App
+    { appDispatchMarker = Nothing
+    }
+
+class DispatchMarker url where
+    dispatchMarker :: url -> Text
+
+installDispatchMarker :: DispatchMarker url => url -> App -> App
+installDispatchMarker url app =
+    app
+        { appDispatchMarker = Just (dispatchMarker url)
+        }
 
 nestedDispatchResources :: [ResourceTree String]
 nestedDispatchResources = [parseRoutes|
@@ -18,6 +35,7 @@ nestedDispatchResources = [parseRoutes|
 /json JsonR GET
 /nest NestR:
     / NestIndexR GET POST
+    /marker NestMarkerR GET
 
 /parent/#Int ParentR:
     /#Text/child1 Child1R !child
@@ -25,6 +43,7 @@ nestedDispatchResources = [parseRoutes|
 
 /parent0/#Int Parent0R:
     / Parent0IndexR GET
+    /marker Parent0MarkerR GET
 
     /child0/#Text Child0R:
         / ParentChildIndexR GET POST
