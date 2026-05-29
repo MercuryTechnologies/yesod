@@ -39,7 +39,6 @@ import Prelude hiding (exp)
 import Yesod.Routes.TH.Internal
 import Web.PathPieces
 import Control.Monad
-import Data.List (foldl')
 import Control.Arrow (second)
 import Yesod.Routes.TH.Types
 import Data.Char (toLower)
@@ -576,6 +575,19 @@ mkNestedDispatchInstance routeOpts target master cxt tyargs unwrapper res = do
 
     let targetT =
             foldl' (\t x -> t `AppT` fst x) (ConT (mkName target)) tyargs
+        hookedUrlToDispatchYre routeE yreE' =
+            case roUrlToDispatchSiteHook routeOpts of
+                Just hookName ->
+                    RecUpdE
+                        yreE'
+                        [ ( 'yreSite
+                          , VarE hookName
+                                `AppE` routeE
+                                `AppE` (VarE 'yreSite `AppE` yreE')
+                          )
+                        ]
+                Nothing ->
+                    yreE'
     urlToDispatchInstances <- case preDyns of
         [] -> do
             -- In this case, we can generate UrlToDispatch without requiring
@@ -605,12 +617,26 @@ mkNestedDispatchInstance routeOpts target master cxt tyargs unwrapper res = do
                                 pure [parentRouteCxt]
             urlToDispatchT <- [t| UrlToDispatch $(pure targetT) $(pure master) |]
             urlToDispatchFn <- [e| toWaiAppYre' (Proxy :: Proxy $(pure targetT)) () |]
+            urlN <- newName "url"
+            yreN <- newName "yre"
+            let urlPat =
+                    case roUrlToDispatchSiteHook routeOpts of
+                        Just _ -> VarP urlN
+                        Nothing -> WildP
             redirectT <- [t| RedirectUrl $(pure master) $(pure targetT) |]
             redirectUrlFn <- [e| toTextUrl . WithParentArgs () |]
             pure $
                 [ instanceD (cxt <> mYesodConstraint <> mToParentRouteConstraint) urlToDispatchT
                     [ FunD 'urlToDispatch
-                        [ Clause [ WildP ] (NormalB urlToDispatchFn) []
+                        [ Clause
+                            [ urlPat
+                            , VarP yreN
+                            ]
+                            ( NormalB $
+                                urlToDispatchFn
+                                    `AppE` hookedUrlToDispatchYre (VarE urlN) (VarE yreN)
+                            )
+                            []
                         ]
                     ]
                 , instanceD (cxt <> mToParentRouteConstraint) redirectT

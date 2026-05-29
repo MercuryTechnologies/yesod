@@ -298,6 +298,19 @@ specs = do
             H.statusCode (simpleStatus sres) `shouldBe` 200
             simpleBody sres `shouldBe` "NestMarkerR"
 
+    describe "UrlToDispatch nested subsite route" $ do
+        it "applies the route-specific site hook before subsite dispatch" $ do
+            yre <- mkYesodRunnerEnv defaultApp
+            let app = urlToDispatch (MarkerSubsiteR MarkerSubsiteMarkerR) yre
+                req = defaultRequest
+                    { pathInfo = ["nest", "sub", "marker"]
+                    , requestMethod = "GET"
+                    }
+            sres <- flip runSession app $ do
+                request req
+            H.statusCode (simpleStatus sres) `shouldBe` 200
+            simpleBody sres `shouldBe` "MarkerSubsiteR"
+
     describe "UrlToDispatch (WithParentArgs Parent0R)" $ do
         it "applies the route-specific site hook with parent args" $ do
             yre <- mkYesodRunnerEnv defaultApp

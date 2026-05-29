@@ -15,10 +15,19 @@ data App = App
     { appDispatchMarker :: Maybe Text
     }
 
+data MarkerSubsite = MarkerSubsite
+
 defaultApp :: App
 defaultApp = App
     { appDispatchMarker = Nothing
     }
+
+getMarkerSubsite :: App -> MarkerSubsite
+getMarkerSubsite _ = MarkerSubsite
+
+mkYesodSubData "MarkerSubsite" [parseRoutes|
+/marker MarkerSubsiteMarkerR GET
+|]
 
 class DispatchMarker url where
     dispatchMarker :: url -> Text
@@ -36,6 +45,7 @@ nestedDispatchResources = [parseRoutes|
 /nest NestR:
     / NestIndexR GET POST
     /marker NestMarkerR GET
+    /sub MarkerSubsiteR MarkerSubsite getMarkerSubsite
 
 /parent/#Int ParentR:
     /#Text/child1 Child1R !child

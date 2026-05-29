@@ -6,6 +6,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module YesodCoreTest.NestedDispatch.NestR where
 
@@ -19,6 +20,10 @@ mkYesodOpts (setUrlToDispatchSiteHook 'installDispatchMarker $ setFocusOnNestedR
 instance DispatchMarker NestR where
     dispatchMarker NestIndexR = "NestIndexR"
     dispatchMarker NestMarkerR = "NestMarkerR"
+    dispatchMarker (MarkerSubsiteR _) = "MarkerSubsiteR"
+
+instance YesodSubDispatch MarkerSubsite App where
+    yesodSubDispatch = $(mkYesodSubDispatch resourcesMarkerSubsite)
 
 getNestIndexR :: HandlerFor App Text
 getNestIndexR = pure "getNestIndexR"
@@ -30,3 +35,8 @@ getNestMarkerR = do
 
 postNestIndexR :: HandlerFor App String
 postNestIndexR = pure "hello"
+
+getMarkerSubsiteMarkerR :: SubHandlerFor MarkerSubsite App Text
+getMarkerSubsiteMarkerR = do
+    app <- getYesod
+    pure $ fromMaybe "missing marker" $ appDispatchMarker app
